@@ -39,6 +39,18 @@ find_package(OpenMP REQUIRED)
 
 include(FetchContent)
 
+FetchContent_Declare(json
+  URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz)
+FetchContent_MakeAvailable(json)
+
+set(HTTPLIB_REQUIRE_ZSTD OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(httplib
+  GIT_REPOSITORY https://github.com/yhirose/cpp-httplib
+  GIT_TAG v0.26.0
+)
+FetchContent_MakeAvailable(httplib)
+
 FetchContent_Declare(
   backward
   GIT_REPOSITORY https://github.com/bombela/backward-cpp
@@ -80,7 +92,6 @@ if (NOT imgui_POPULATED)
   file(GLOB IMGUI_HEADERS ${imgui_SOURCE_DIR}/*.h)
   add_library(imgui STATIC ${IMGUI_SOURCES} ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp)
   target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR}/backends ${IMGUI_INCLUDE_DIR} ${OPENGL_INCLUDE_DIR} ${GLFW_INCLUDE_DIR} ${GLAD_INCLUDE_DIR})
-  # add_definitions(-DIMGUI_IMPL_OPENGL_LOADER_GLEW)
   target_link_libraries(imgui ${OPENGL_LIBRARIES} glfw)
 endif ()
 
@@ -95,6 +106,8 @@ target_link_libraries(common PUBLIC
   Backward::Interface
   argparse::argparse
   indicators::indicators
+  nlohmann_json::nlohmann_json
+  httplib::httplib
 )
 target_precompile_headers(common PRIVATE src/header.hpp)
 
