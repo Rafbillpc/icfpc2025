@@ -108,6 +108,7 @@ target_link_libraries(common PUBLIC
   indicators::indicators
   nlohmann_json::nlohmann_json
   httplib::httplib
+  cadical
 )
 target_precompile_headers(common PRIVATE src/header.hpp)
 

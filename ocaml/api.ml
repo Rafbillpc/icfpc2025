@@ -3,23 +3,15 @@ open Format
 let read_file file = In_channel.with_open_bin file In_channel.input_all
 
 let base_url = "https://31pwr5t6ij.execute-api.eu-west-2.amazonaws.com/"
-let cached_token = ref None
 
-let get_token () : string =
-  match !cached_token with
-  | Some(t) -> t
-  | None ->
-    try
-      let token = String.trim (read_file ".token") in
-      cached_token := Some(token);
-      token
-    with
-    | Sys_error(_) as e ->
-      eprintf "Please create a \".token\" file with the authentication token.\n";
-      raise e
+let register team_name pl =
+  let headers = [] in
+  let params = [] in
+  let content = `String(body) in
+  let r = Ezcurl.post ~url ~headers ~params ~content () in
+  let r = Result.get_ok r in
+  r.body
 
-let make_headers () =
-  [ ("Authorization", "Bearer " ^ get_token ()) ]
 
 (* type scoreboard_row = *)
 (*   { is_you : bool; *)
