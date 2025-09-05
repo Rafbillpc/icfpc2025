@@ -1,4 +1,6 @@
 #include "header.hpp"
+#include "api.hpp"
+#include "layout.hpp"
 #include "backward.hpp"
 #include <cadical.hpp>
 
@@ -205,45 +207,6 @@ struct union_find {
   }
 };
 
-struct layout {
-  int size;
-  vector<int> tag;
-  vector<array<int, 6>> graph;
-  int start;
-
-  void generate(int size_) {
-    size = size_;
-    tag.resize(size);
-    FOR(i, size) tag[i] = i%4;
-    rng.shuffle(tag);
-    graph.resize(size);
-    FOR(i, size) FOR(j, 6) graph[i][j] = rng.random32(size);
-    start = rng.random32(size);
-  }
-
-  vector<int> evaluate_query(vector<int> const& q) {
-    vector<int> out;
-    int x = start;
-    out.pb(tag[x]);
-    for(int i : q) {
-      x = graph[x][i];
-      out.pb(tag[x]);
-    }
-    return out;
-  }
-
-  vector<int> evaluate_query_full(vector<int> const& q) {
-    vector<int> out;
-    int x = start;
-    out.pb(x);
-    for(int i : q) {
-      x = graph[x][i];
-      out.pb(x);
-    }
-    return out;
-  }
-};
-
 bool test_equivalence(layout const& a, layout const& b) {
   set<array<int, 2>> pairs;
   auto dfs = [&](auto &&dfs, int i, int j) -> void {
@@ -260,10 +223,32 @@ bool test_equivalence(layout const& a, layout const& b) {
   return true;
 }
 
-void solve(int size, int num_queries) {
-  layout L;
-  L.generate(size);
+struct QUERIES {
+  virtual vector<vector<int>> query(vector<vector<int>> const& q) const = 0;
+};
 
+struct layout_queries : QUERIES {
+  layout const& L;
+  layout_queries(layout const& L_) : L(L_) { }
+  virtual vector<vector<int>> query(vector<vector<int>> const& q) const override final {
+    vector<vector<int>> R;
+    for(auto const& v : q) R.pb(L.evaluate_query(v));
+    return R;
+  }
+};
+
+struct api_queries : QUERIES {
+  virtual vector<vector<int>> query(vector<vector<int>> const& q) const override final {
+    vector<string> R;
+    for(auto const& v : q) {
+      R.eb();
+      for(int i : v) R.back() += ('0'+i);
+    }
+    return api_explore(R);
+  }
+};
+
+layout solve(QUERIES const& Q, int size, int num_queries) {
   const int query_size = 18 * size;
 
   vector<vector<int>> queries(num_queries);
@@ -271,13 +256,12 @@ void solve(int size, int num_queries) {
     queries[i].pb(rng.random32(6));
   }
 
-  vector<vector<int>> answers(num_queries);
-  FOR(i, num_queries) answers[i] = L.evaluate_query(queries[i]);
+  vector<vector<int>> answers = Q.query(queries);
 
-  vector<vector<int>> answers_full(num_queries);
-  FOR(i, num_queries) answers_full[i] = L.evaluate_query_full(queries[i]);
-  vector<int> concat_full;
-  FOR(i, num_queries) concat_full.insert(end(concat_full), all(answers_full[i]));
+  // vector<vector<int>> answers_full(num_queries);
+  // FOR(i, num_queries) answers_full[i] = L.evaluate_query_full(queries[i]);
+  // vector<int> concat_full;
+  // FOR(i, num_queries) concat_full.insert(end(concat_full), all(answers_full[i]));
 
   int N = 0;
 
@@ -320,12 +304,15 @@ void solve(int size, int num_queries) {
       G[i].pb(j);
       G[j].pb(i);
     }
-    max_clique MC(G);
-    MC.search();
-    for(int i : MC.maxClique) maxClique.pb(E[i]);
+    if(!G.empty()) {
+      max_clique MC(G);
+      MC.search();
+      for(int i : MC.maxClique) maxClique.pb(E[i]);
+    }
   }
 
-  if((int)maxClique.size() < size) return;
+  debug(maxClique.size());
+  if((int)maxClique.size() < size) return {};
 
   for(int a : maxClique) for(int b : maxClique) if(a != b) {
         runtime_assert(DIFF[a][b]);
@@ -378,6 +365,15 @@ void solve(int size, int num_queries) {
     }
   }
 
+  FOR(i, size) FOR(j, size) FOR(k, 6) {
+    solver->add(-TO[i][j][k]);
+    FOR(k2, 6) {
+      solver->add(TO[j][i][k2]);
+    }
+    solver->add(0);
+  }
+
+  debug("start SAT");
   int res = solver->solve();
   debug(res);
 
@@ -409,20 +405,48 @@ void solve(int size, int num_queries) {
       debug(answers[i] == a);
     }
 
-    bool ok = test_equivalence(L, out_layout);
-    debug(ok);
-
-    if(!ok) return;
-
-    exit(0);
+    return out_layout;
   }
+
+  return {};
 }
 
 int main() {
   backward::SignalHandling sh;
 
+  // test
+  // while(1) {
+  //   int size = 30;
+  //   int num_queries = 1;
+  //   layout L; L.generate(size);
+  //   layout_queries Q(L);
+  //   auto R = solve(Q, size, num_queries);
+
+  //   if(R.size != 0) {
+  //     debug(L.get_doors());
+  //     debug(R.get_doors());
+  //     if(test_equivalence(L, R)) {
+  //       debug("FOUND");
+  //       break;
+  //     }
+  //   }
+  // }
+
+  // interact
+  int size = 30;
+  int num_queries = 1;
+  auto problem_name = get_problem_name(size);
   while(1) {
-    solve(24, 3);
+    api_queries Q;
+    api_select(problem_name);
+    auto R = solve(Q, size, num_queries);
+
+    if(R.size != 0) {
+      debug("candidate");
+      bool correct = api_guess(R);
+      debug(correct);
+      if(correct) break;
+    }
   }
 
   return 0;

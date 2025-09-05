@@ -98,6 +98,7 @@ endif ()
 # Common
 add_library(common
   src/header.cpp
+  src/api.cpp
 )
 target_include_directories(common PUBLIC
   src)
