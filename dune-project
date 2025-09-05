@@ -1,1 +1,2 @@
-(lang dune 3.6)
+(lang dune 2.7)
+(wrapped_executables false)

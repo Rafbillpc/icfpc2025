@@ -1,4 +1,5 @@
 (executable
  (name main)
- (modules main)
- (libraries containers zarith))
+ (modes byte exe)
+ (preprocess (pps ppx_deriving.std))
+ (libraries containers zarith yojson ezcurl))

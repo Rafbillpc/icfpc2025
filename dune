@@ -2,10 +2,10 @@
  (dev
   (flags (:standard
            -warn-error -A
-           ; -w -12 ; redundant-subpat
-           ; -w -26 ; unused-var
-           ; -w -27 ; unused-var-strict
+           -w -12 ; redundant-subpat
+           -w -26 ; unused-var
+           -w -27 ; unused-var-strict
            ; -w -32 ; unused-value
-           ; -w -33 ; unused-open
+           -w -33 ; unused-open
            ; -w -69 ; unused-field
 ))))
