@@ -4,7 +4,6 @@
 
 struct max_clique {
   int n;
-  int goal;
   vector<vector<unsigned char>> adj;
 
   vector<vector<int>> es;
@@ -30,8 +29,7 @@ struct max_clique {
 
   vector<int> maxClique;
 
-  max_clique(int goal_, vector<vector<int>> G) {
-    goal = goal_;
+  max_clique(vector<vector<int>> G) {
     maxClique = {0};
 
     n = G.size();
@@ -151,8 +149,7 @@ struct max_clique {
 
   void branch(vector<int> const& s){
     int sz = s.size();
-    while((int)maxClique.size() < goal
-          && !P[sz].empty()
+    while(!P[sz].empty()
           && sz + P[sz].size() >= (maxClique.size()+1)) {
       vertex v = P[sz].back();
 
@@ -248,7 +245,6 @@ struct layout {
 };
 
 bool test_equivalence(layout const& a, layout const& b) {
-  int size = a.size;
   set<array<int, 2>> pairs;
   auto dfs = [&](auto &&dfs, int i, int j) -> void {
     if(pairs.insert({i,j}).second) {
@@ -264,28 +260,15 @@ bool test_equivalence(layout const& a, layout const& b) {
   return true;
 }
 
-const int num_patterns = 100;
-const int pattern_size = 24*18-1; // 16
-const int num_queries  = 3;
-
-void solve(int size) {
+void solve(int size, int num_queries) {
   layout L;
   L.generate(size);
 
   const int query_size = 18 * size;
-  const int patterns_per_query = query_size / (1+pattern_size);
 
-  vector<vector<int>> patterns(num_patterns);
-  FOR(i, num_patterns) FOR(j, pattern_size) patterns[i].pb(rng.random32(6));
-
-  vector<vector<array<int, 2>>> queries_data(num_queries);
   vector<vector<int>> queries(num_queries);
-  FOR(i, num_queries) FOR(j, patterns_per_query) {
-    int x = rng.random32(6);
-    int ipat = rng.random32(patterns.size());
-    queries_data[i].pb({x,ipat});
-    queries[i].pb(x);
-    queries[i].insert(end(queries[i]), all(patterns[ipat]));
+  FOR(i, num_queries) FOR(j, query_size) {
+    queries[i].pb(rng.random32(6));
   }
 
   vector<vector<int>> answers(num_queries);
@@ -299,154 +282,87 @@ void solve(int size) {
   int N = 0;
 
   vector<int> tag;
-  vector<array<int, 2>> to;
-  map<tuple<int, vector<int>>, vector<int>> by_key;
+  vector<array<int, 6>> to;
 
   FOR(i, num_queries) {
-    by_key[{-1, {}}].pb(N);
     FOR(j, queries[i].size()) {
-      to.pb({ queries[i][j], N+1+j });
+      to.pb({-1,-1,-1,-1,-1,-1});
+      to.back()[queries[i][j]] = N+1+j;
     }
-    to.pb({-1, -1});
-    N += 1;
+    to.pb({-1,-1,-1,-1,-1,-1});
+    N += queries[i].size()+1;
 
     FOR(j, answers[i].size()) tag.pb(answers[i][j]);
-
-    FOR(j, patterns_per_query) {
-      auto [x,y] = queries_data[i][j];
-
-      vector<int> k;
-      FOR(x, pattern_size+1) {
-        k.pb(answers[i][1+j*(pattern_size+1)+x]);
-      }
-
-      by_key[{y, k}].pb(N + pattern_size);
-      N += 1+pattern_size;
-    }
-  }
-  debug(N, to.size());
-
-  union_find uf(N);
-
-  for(auto const& p : by_key) {
-    for(int i : p.second) {
-      if(concat_full[i] != concat_full[p.second[0]]){
-        return;
-      }
-      uf.unite(i, p.second[0]);
-    }
   }
 
+  vector<vector<int>> DIFF(N, vector<int>(N, 0));
+  FOR(i, N) FOR(j, i) if(tag[i] != tag[j]) DIFF[i][j] = DIFF[j][i] = 1;
   while(1) {
     bool imp = 0;
-    map<array<int,2>, vector<int>> part;
-    FOR(i, N) if(to[i][0] != -1) part[{uf.find(i), to[i][0]}].pb(to[i][1]);
-    for(auto const& p : part) {
-      for(int i : p.second) {
-        if(uf.unite(i, p.second[0])) {
-          imp = 1;
-        }
-      }
-    }
-    if(!imp) break;
-  }
-
-  FOR(i, N) {
-    runtime_assert(concat_full[i] == concat_full[uf.find(i)]);
-  }
-
-  FOR(i, N) runtime_assert(tag[i] == tag[uf.find(i)]);
-
-  int M = 0;
-  vector<int> root(N, -1);
-  vector<int> root_tag(N);
-  FOR(i, N) if(root[uf.find(i)] == -1) {
-    root[uf.find(i)] = M;
-    root_tag[M] = tag[uf.find(i)];
-    M += 1;
-  }
-
-  vector<array<int, 6>> root_to(M);
-  FOR(i, M) FOR(j, 6) root_to[i][j] = -1;
-
-  map<array<int,2>, vector<int>> part;
-  FOR(i, N) if(to[i][0] != -1) part[{uf.find(i), to[i][0]}].pb(to[i][1]);
-
-  FOR(i, N) if(uf.find(i) == i) {
-    FOR(j, 6) {
-      array<int, 2> key = {i, j};
-      if(part.count(key)) {
-        root_to[root[i]][j] = root[uf.find(part[key][0])];
-      }
-    }
-  }
-  debug(M);
-
-  vector<vector<int>> DIFF(M, vector<int>(M, 0));
-  vector<vector<int>> G(M);
-  FOR(i, M) FOR(j, i) if(root_tag[i] != root_tag[j]) DIFF[i][j] = DIFF[j][i] = 1;
-  while(1) {
-    bool imp = 0;
-    FOR(i, M) FOR(j, i) if(!DIFF[i][j]) FOR(k, 6) {
-        if(root_to[i][k] != -1 && root_to[j][k] != -1
-           && DIFF[root_to[i][k]][root_to[j][k]]) {
+    FOR(i, N) FOR(j, i) if(!DIFF[i][j]) FOR(k, 6) {
+        if(to[i][k] != -1 && to[j][k] != -1
+           && DIFF[to[i][k]][to[j][k]]) {
           imp = 1;
           DIFF[i][j] = DIFF[j][i] = 1;
         }
     }
     if(!imp) break;
   }
-  int ndiff = 0;
-  FOR(i, M) FOR(j, i) if(DIFF[i][j]) {
-    ndiff += 1;
-    G[i].pb(j);
-    G[j].pb(i);
+
+  vector<int> maxClique;
+
+  FOR(T, 4) {
+    vector<int> E;
+    FOR(i, N) if(tag[i] == T) E.pb(i);
+
+    vector<vector<int>> G(E.size());
+    FOR(i, E.size()) FOR(j, i) if(DIFF[E[i]][E[j]]) {
+      G[i].pb(j);
+      G[j].pb(i);
+    }
+    max_clique MC(G);
+    MC.search();
+    for(int i : MC.maxClique) maxClique.pb(E[i]);
   }
-  debug(ndiff);
-  max_clique MC(size, G);
-  MC.search();
-  debug(MC.maxClique.size());
 
-  if((int)MC.maxClique.size() < size) return;
+  if((int)maxClique.size() < size) return;
 
-  for(int a : MC.maxClique) for(int b : MC.maxClique) if(a != b) {
+  for(int a : maxClique) for(int b : maxClique) if(a != b) {
         runtime_assert(DIFF[a][b]);
     }
 
   unique_ptr<CaDiCaL::Solver> solver = make_unique<CaDiCaL::Solver>();
 
-  debug(root_to);
-
   int nv = 0;
-  vector<vector<int>> V(M, vector<int>(size));
-  FOR(i, M) FOR(j, size) V[i][j] = ++nv;
+  vector<vector<int>> V(N, vector<int>(size));
+  FOR(i, N) FOR(j, size) V[i][j] = ++nv;
   vector<vector<array<int, 6>>> TO(size);
   FOR(i, size) TO[i].resize(size);
   FOR(i, size) FOR(j, size) FOR(k, 6) TO[i][j][k] = ++nv;
 
-  debug(MC.maxClique);
+  debug(maxClique);
   FOR(i, size) {
-    solver->add(V[MC.maxClique[i]][i]);
+    solver->add(V[maxClique[i]][i]);
     solver->add(0);
   }
-  FOR(i, M) FOR(j, size) if(DIFF[i][MC.maxClique[j]]) {
+  FOR(i, N) FOR(j, size) if(DIFF[i][maxClique[j]]) {
     solver->add(-V[i][j]);
     solver->add(0);
   }
-  FOR(i, M) {
+  FOR(i, N) {
     FOR(j, size) solver->add(V[i][j]);
     solver->add(0);
   }
-  FOR(i, M) FOR(j1, size) FOR(j2, j1) {
+  FOR(i, N) FOR(j1, size) FOR(j2, j1) {
     solver->add(- V[i][j1]);
     solver->add(- V[i][j2]);
     solver->add(0);
   }
-  FOR(i, M) FOR(k, 6) if(root_to[i][k] != -1) {
+  FOR(i, N) FOR(k, 6) if(to[i][k] != -1) {
     FOR(a, size) FOR(b, size) {
       solver->add(- TO[a][b][k]);
       solver->add(- V[i][a]);
-      solver->add(V[root_to[i][k]][b]);
+      solver->add(V[to[i][k]][b]);
       solver->add(0);
     }
   }
@@ -477,12 +393,12 @@ void solve(int size) {
     layout out_layout;
     out_layout.size = size;
     out_layout.tag.resize(size);
-    FOR(i, size) out_layout.tag[i] = root_tag[MC.maxClique[i]];
+    FOR(i, size) out_layout.tag[i] = tag[maxClique[i]];
     out_layout.graph.resize(size);
     FOR(a, size) FOR(k, 6) FOR(b, size) if(solver->val(TO[a][b][k]) > 0) {
       out_layout.graph[a][k] = b;
     }
-    if(int i = root[0]; 1) FOR(j, size) if(solver->val(V[i][j]) > 0) {
+    if(int i = 0; 1) FOR(j, size) if(solver->val(V[i][j]) > 0) {
         out_layout.start = j;
       }
 
@@ -506,7 +422,7 @@ int main() {
   backward::SignalHandling sh;
 
   while(1) {
-    solve(24);
+    solve(24, 3);
   }
 
   return 0;
