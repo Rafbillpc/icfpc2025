@@ -319,7 +319,7 @@ layout solve(QUERIES const& Q, int size, int num_queries) {
     }
 
   kissat* solver = kissat_init();
-  kissat_set_option(solver, "quiet", 1);
+  // kissat_set_option(solver, "quiet", 1);
 
   // unique_ptr<CaDiCaL::Solver> solver = make_unique<CaDiCaL::Solver>();
 
@@ -384,7 +384,7 @@ layout solve(QUERIES const& Q, int size, int num_queries) {
     // FOR(i, M) FOR(j, size) if(solver->val(V[i][j]) > 0) {
     //   debug(i,j);
     // }
-    
+
     // FOR(a, size) FOR(k, 6) FOR(b, size) if(solver->val(TO[a][b][k]) > 0) {
     //   debug(a,k,b);
     // }
@@ -419,8 +419,8 @@ int main() {
 
   // test
   while(1) {
-    int size = 30;
-    int num_queries = 1;
+    int size = 60;
+    int num_queries = 3;
     layout L; L.generate(size);
     layout_queries Q(L);
     auto R = solve(Q, size, num_queries);
