@@ -1,4 +1,4 @@
-#pragma once
+    #pragma once
 
 struct layout {
   int size = 0;
@@ -49,10 +49,22 @@ struct layout {
     return out;
   }
 
+  vector<int> evaluate_query_full(vector<array<int,2>> const& q) const {
+    vector<int> out;
+    int x = start;
+    out.pb(x);
+    for(auto [i,t] : q) {
+      x = graph[x][i];
+      out.pb(x);
+    }
+    return out;
+  }
+
+
   vector<array<int, 4>> get_doors() const {
     vector<array<int, 4>> out;
     map<array<int, 2>, vector<int>> S;
-    FOR(x, size) FOR(k, 6) {
+    FOR(x, size*num_dups) FOR(k, 6) {
       if(graph[x][k] == x) {
         out.pb({x,k,x,k});
       }else {
@@ -66,6 +78,7 @@ struct layout {
         }
       }
     }
+    // for(auto const& p : S) runtime_assert(p.second.empty());
     return out;
   }
 };

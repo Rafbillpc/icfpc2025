@@ -27,13 +27,29 @@ void check_response(httplib::Result& response) {
   }
 }
 
-string get_problem_name(int size) {
-  if(size == 3) return "probatio";
-  if(size == 6) return "primus";
-  if(size == 12) return "secundus";
-  if(size == 18) return "tertius";
-  if(size == 24) return "quartus";
-  if(size == 30) return "quintus";
+string get_problem_name(int size, int num_dups) {
+  if(num_dups == 1) {
+    if(size == 3) return "probatio";
+    if(size == 6) return "primus";
+    if(size == 12) return "secundus";
+    if(size == 18) return "tertius";
+    if(size == 24) return "quartus";
+    if(size == 30) return "quintus";
+  }
+  if(num_dups == 2){
+    if(size == 6) return "aleph";
+    if(size == 12) return "beth";
+    if(size == 18) return "gimel";
+    if(size == 24) return "daleth";
+    if(size == 30) return "he";
+  }
+  if(num_dups == 3){
+    if(size == 6) return "vau";
+    if(size == 12) return "zain";
+    if(size == 18) return "hhet";
+    if(size == 24) return "teth";
+    if(size == 30) return "iod";
+  }
   impossible();
 }
 
@@ -89,7 +105,7 @@ bool api_guess(layout const& L) {
 
   json j;
   j["id"] = get_id();
-  FOR(i, L.size) j["map"]["rooms"].emplace_back(L.tag[i]);
+  FOR(i, L.size*L.num_dups) j["map"]["rooms"].emplace_back(L.tag[i]);
   j["map"]["startingRoom"] = L.start;
   auto doors = L.get_doors();
   debug(doors);
@@ -104,7 +120,7 @@ bool api_guess(layout const& L) {
   
   auto str = j.dump();
 
-  debug(str);
+  // debug(str);
 
   auto response = client->Post(url.c_str(), str.c_str(), "application/json");
   if(!response || (response->status != 200 && response->status != 201)) {

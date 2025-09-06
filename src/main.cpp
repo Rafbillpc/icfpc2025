@@ -32,6 +32,7 @@ struct union_find {
 };
 
 bool test_equivalence(layout const& a, layout const& b) {
+  runtime_assert(a.size == b.size && a.num_dups == b.num_dups);
   set<array<int, 2>> pairs;
   auto dfs = [&](auto &&dfs, int i, int j) -> void {
     if(pairs.insert({i,j}).second) {
@@ -44,7 +45,7 @@ bool test_equivalence(layout const& a, layout const& b) {
   for(auto [x,y] : pairs) if(a.tag[x] != b.tag[y]) {
       return false;
     }
-  return true;
+  return (int)pairs.size() == a.size * b.num_dups;
 }
 
 struct QUERIES {
@@ -75,12 +76,25 @@ struct api_queries : QUERIES {
         }
       }
     }
-    return api_explore(R);
+    auto RET = api_explore(R);
+    vector<vector<int>> out;
+    FOR(i, q.size()) {
+      int at = 1;
+      out.eb();
+      out.back().pb(RET[i][0]);
+      FOR(j, q[i].size()) {
+        out.back().pb(RET[i][at]);
+        if(q[i][j][1] != -1) at += 1;
+        at += 1;
+      }
+      runtime_assert(at == (int)(RET[i].size()));
+    }
+    return out;
   }
 };
 
 layout solve_base(QUERIES const& Q, int size, int num_dups, int num_queries) {
-  const int query_size = 6 * size;
+  const int query_size = 6 * size * num_dups;
 
   vector<vector<array<int,2>>> queries(num_queries);
   FOR(i, num_queries) FOR(j, query_size) {
@@ -145,11 +159,10 @@ layout solve_base(QUERIES const& Q, int size, int num_dups, int num_queries) {
   vector<int> E(N); iota(all(E),0);
   auto maxClique = max_clique(max_clique, E);
 
-  debug(maxClique.size());
   if((int)maxClique.size() < size) return {};
 
   kissat* solver = kissat_init();
-  // kissat_set_option(solver, "quiet", 1);
+  kissat_set_option(solver, "quiet", 1);
 
   // unique_ptr<CaDiCaL::Solver> solver = make_unique<CaDiCaL::Solver>();
 
@@ -160,7 +173,6 @@ layout solve_base(QUERIES const& Q, int size, int num_dups, int num_queries) {
   FOR(i, size) TO[i].resize(size);
   FOR(i, size) FOR(j, size) FOR(k, 6) TO[i][j][k] = ++nv;
 
-  debug(maxClique);
   FOR(i, size) {
     kissat_add(solver, V[maxClique[i]][i]);
     kissat_add(solver, 0);
@@ -206,9 +218,7 @@ layout solve_base(QUERIES const& Q, int size, int num_dups, int num_queries) {
     kissat_add(solver, 0);
   }
 
-  debug("start SAT");
   int res = kissat_solve(solver);
-  debug(res);
 
   if(res == 10) {
     // FOR(i, M) FOR(j, size) if(solver->val(V[i][j]) > 0) {
@@ -221,6 +231,7 @@ layout solve_base(QUERIES const& Q, int size, int num_dups, int num_queries) {
 
     layout out_layout;
     out_layout.size = size;
+    out_layout.num_dups = 1;
     out_layout.tag.resize(size);
     FOR(i, size) out_layout.tag[i] = tag[maxClique[i]];
     out_layout.graph.resize(size);
@@ -231,59 +242,221 @@ layout solve_base(QUERIES const& Q, int size, int num_dups, int num_queries) {
         out_layout.start = j;
       }
 
+    kissat_release(solver);
     return out_layout;
   }
 
+  kissat_release(solver);
   return {};
 }
 
 layout solve_dup
 (QUERIES const& Q, int size, int num_dups, int num_queries, layout const& base_layout)
 {
-  debug("HERE");
-  exit(0);
+  const int query_size = 6 * size * num_dups;
+
+  vector<vector<array<int,2>>> queries(num_queries);
+  FOR(i, num_queries) FOR(j, query_size) {
+    queries[i].pb({(int)rng.random32(6), (int)rng.random32(4)});
+  }
+
+  vector<vector<int>> answers = Q.query(queries);
+  int N = 0;
+  vector<array<int, 6>> to;
+  vector<int> at;
+  vector<int> is_start;
+  vector<vector<int>> rev(num_queries);
+  FOR(i, num_queries) {
+    int x = base_layout.start;
+    at.pb(x);
+    is_start.pb(1);
+    FOR(j, query_size+1) {
+      if(j < query_size) {
+        x = base_layout.graph[x][queries[i][j][0]];
+        at.pb(x);
+        is_start.pb(0);
+      }
+      to.pb({-1,-1,-1,-1,-1,-1});
+      rev[i].pb(N);
+      N += 1;
+      if(j < query_size) to.back()[queries[i][j][0]] = N;
+    }
+  }
+
+  kissat* solver = kissat_init();
+  kissat_set_option(solver, "quiet", 1);
+
+  int nv = 0;
+  vector<vector<int>> V(N, vector<int>(num_dups));
+  FOR(i, N) FOR(j, num_dups) V[i][j] = ++nv;
+  vector<vector<vector<array<int, 6>>>> TO(size);
+  FOR(i, size) TO[i].resize(num_dups);
+  FOR(i, size) FOR(a, num_dups) TO[i][a].resize(num_dups);
+  FOR(i, size) FOR(a, num_dups) FOR(b, num_dups) FOR(k, 6) TO[i][a][b][k] = ++nv;
+
+  FOR(i, N) {
+    FOR(j, num_dups) kissat_add(solver, V[i][j]);
+    kissat_add(solver, 0);
+  }
+  FOR(i, N) {
+    FOR(j1, num_dups) FOR(j2, j1) {
+      kissat_add(solver, -V[i][j1]);
+      kissat_add(solver, -V[i][j2]);
+      kissat_add(solver, 0);
+    }
+  }
+  FOR(i, size) FOR(k, 6) {
+    FOR(a, num_dups) {
+      { FOR(b, num_dups) kissat_add(solver, TO[i][a][b][k]);
+        kissat_add(solver, 0);
+      }
+      FOR(b1, num_dups) FOR(b2, b1) {
+        kissat_add(solver, - TO[i][a][b1][k]);
+        kissat_add(solver, - TO[i][a][b2][k]);
+        kissat_add(solver, 0);
+      }
+      { FOR(b, num_dups) kissat_add(solver, TO[i][b][a][k]);
+        kissat_add(solver, 0);
+      }
+      FOR(b1, num_dups) FOR(b2, b1) {
+        kissat_add(solver, - TO[i][b1][a][k]);
+        kissat_add(solver, - TO[i][b2][a][k]);
+        kissat_add(solver, 0);
+      }
+    }
+  }
+  FOR(i, N) FOR(a, num_dups) FOR(b, num_dups) FOR(k, 6) if(to[i][k] != -1) {
+    kissat_add(solver, - TO[at[i]][a][b][k]);
+    kissat_add(solver, - V[i][a]);
+    kissat_add(solver, V[to[i][k]][b]);
+    kissat_add(solver, 0);
+  }
+  FOR(i, N) if(is_start[i]) {
+    kissat_add(solver, V[i][0]);
+    kissat_add(solver, 0);
+  }
+
+  FOR(i, num_queries) {
+    vector<vector<array<int,3>>> X(size);
+    FOR(j, query_size) {
+      int ans = answers[i][j+1];
+      int wrote = queries[i][j][1];
+      int when = rev[i][j+1];
+      int elem = at[when];
+      int k = X[elem].size()-1;
+      while(k >= 0 && X[elem][k][2] != ans) {
+        FOR(a, num_dups) {
+          kissat_add(solver, - V[X[elem][k][0]][a]);
+          kissat_add(solver, - V[when][a]);
+          kissat_add(solver, 0);
+        }
+        k -= 1;
+      }
+      X[elem].pb({when, ans, wrote});
+    }
+  }
+
+  FOR(i, size) FOR(k, 6) FOR(a, num_dups) FOR(b, num_dups) {
+    int j = base_layout.graph[i][k];
+    kissat_add(solver, -TO[i][a][b][k]);
+    FOR(k2, 6) if(base_layout.graph[j][k2] == i) {
+      kissat_add(solver, TO[j][b][a][k2]);
+    }
+    kissat_add(solver, 0);
+  }
+
+  int res = kissat_solve(solver);
+
+  if(res == 10) {
+    layout out_layout;
+    out_layout.size = size;
+    out_layout.num_dups = num_dups;
+    out_layout.tag.resize(size * num_dups);
+    out_layout.graph.resize(size * num_dups);
+    out_layout.start = base_layout.start;
+
+    FOR(i, size*num_dups) out_layout.tag[i] = base_layout.tag[i%size];
+
+    FOR(i, size) FOR(a, num_dups) FOR(k, 6) FOR(b, num_dups) {
+      if(kissat_value(solver, TO[i][a][b][k]) > 0) {
+        out_layout.graph[i+a*size][k] = base_layout.graph[i][k]+b*size;
+      }
+    }
+
+    kissat_release(solver);
+
+    return out_layout;
+  }
+  kissat_release(solver);
+
   return {};
 }
 
 int main() {
   backward::SignalHandling sh;
 
-  int size = 6;
+  // (6, 2)  : (1,1)
+  // (12, 2) : (2,1)
+  // (18, 2) : (2,1)
+  // (24, 2) : (2,1)
+  // (30, 2) : (3,1)
+
+  // (6, 3)  : (1,1)
+  // (12, 3) : (2,1)
+  // (18, 3) : (2,2)
+  // (24, 3) : (2,2)
+  // (30, 3) : (3,2)
+
+  int size = 12;
   int num_dups = 2;
-  int num_queries1 = 3;
-  int num_queries2 = 3;
+  int num_queries1 = 2;
+  int num_queries2 = 1;
+  bool use_api = true;
 
-  // test
-  while(1) {
-    layout L; L.generate(size, num_dups);
-    layout_queries Q(L);
-    auto R1 = solve_base(Q, size, num_dups, num_queries1);
-    if(R1.size == 0) continue;
-    auto R2 = solve_dup(Q, size, num_dups, num_queries2, R1);
-    if(R2.size == 0) continue;
+  int ntest = 0;
 
-    if(test_equivalence(L, R2)) {
-      debug("FOUND");
-      break;
+  if(!use_api) {
+
+    while(1) {
+      ntest += 1;
+      debug(ntest);
+      layout L; L.generate(size, num_dups);
+      layout_queries Q(L);
+      auto R1 = solve_base(Q, size, num_dups, num_queries1);
+      if(R1.size == 0) continue;
+      debug("reach1");
+      auto R2 = solve_dup(Q, size, num_dups, num_queries2, R1);
+      if(R2.size == 0) continue;
+      debug("reach2");
+
+      if(test_equivalence(L, R2)) {
+        debug("FOUND", ntest);
+        break;
+      }
+    }
+
+  }else {
+
+    auto problem_name = get_problem_name(size, num_dups);
+    debug(problem_name);
+    while(1) {
+      ntest += 1;
+      debug(ntest);
+      api_select(problem_name);
+      api_queries Q;
+      auto R1 = solve_base(Q, size, num_dups, num_queries1);
+      if(R1.size == 0) continue;
+      debug("reach1");
+
+      auto R2 = solve_dup(Q, size, num_dups, num_queries2, R1);
+      if(R2.size == 0) continue;
+      debug("reach2");
+
+      bool correct = api_guess(R2);
+      debug(correct);
+      if(correct) break;
     }
   }
-
-  // interact
-  // int size = 12;
-  // int num_queries = 3;
-  // auto problem_name = "aleph"; get_problem_name(size);
-  // while(1) {
-  //   api_queries Q;
-  //   api_select(problem_name);
-  //   auto R = solve_base(Q, size, num_queries);
-
-  //   if(R.size != 0) {
-  //     debug("candidate");
-  //     bool correct = api_guess(R);
-  //     debug(correct);
-  //     if(correct) break;
-  //   }
-  // }
 
   return 0;
 }
