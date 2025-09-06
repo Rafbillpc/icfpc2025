@@ -2,7 +2,7 @@
 #include "api.hpp"
 #include "layout.hpp"
 #include "backward.hpp"
-#include <cadical.hpp>
+#include "kissat.h"
 
 struct max_clique {
   int n;
@@ -318,7 +318,10 @@ layout solve(QUERIES const& Q, int size, int num_queries) {
         runtime_assert(DIFF[a][b]);
     }
 
-  unique_ptr<CaDiCaL::Solver> solver = make_unique<CaDiCaL::Solver>();
+  kissat* solver = kissat_init();
+  kissat_set_option(solver, "quiet", 1);
+
+  // unique_ptr<CaDiCaL::Solver> solver = make_unique<CaDiCaL::Solver>();
 
   int nv = 0;
   vector<vector<int>> V(N, vector<int>(size));
@@ -329,52 +332,52 @@ layout solve(QUERIES const& Q, int size, int num_queries) {
 
   debug(maxClique);
   FOR(i, size) {
-    solver->add(V[maxClique[i]][i]);
-    solver->add(0);
+    kissat_add(solver, V[maxClique[i]][i]);
+    kissat_add(solver, 0);
   }
   FOR(i, N) FOR(j, size) if(DIFF[i][maxClique[j]]) {
-    solver->add(-V[i][j]);
-    solver->add(0);
+    kissat_add(solver, -V[i][j]);
+    kissat_add(solver, 0);
   }
   FOR(i, N) {
-    FOR(j, size) solver->add(V[i][j]);
-    solver->add(0);
+    FOR(j, size) kissat_add(solver, V[i][j]);
+    kissat_add(solver, 0);
   }
   FOR(i, N) FOR(j1, size) FOR(j2, j1) {
-    solver->add(- V[i][j1]);
-    solver->add(- V[i][j2]);
-    solver->add(0);
+    kissat_add(solver, - V[i][j1]);
+    kissat_add(solver, - V[i][j2]);
+    kissat_add(solver, 0);
   }
   FOR(i, N) FOR(k, 6) if(to[i][k] != -1) {
     FOR(a, size) FOR(b, size) {
-      solver->add(- TO[a][b][k]);
-      solver->add(- V[i][a]);
-      solver->add(V[to[i][k]][b]);
-      solver->add(0);
+      kissat_add(solver, - TO[a][b][k]);
+      kissat_add(solver, - V[i][a]);
+      kissat_add(solver, V[to[i][k]][b]);
+      kissat_add(solver, 0);
     }
   }
   FOR(i, size) FOR(k, 6) {
-    FOR(j, size) solver->add(TO[i][j][k]);
-    solver->add(0);
+    FOR(j, size) kissat_add(solver, TO[i][j][k]);
+    kissat_add(solver, 0);
   }
   FOR(i, size) FOR(k, 6) {
     FOR(j1, size) FOR(j2, j1){
-      solver->add(-TO[i][j1][k]);
-      solver->add(-TO[i][j2][k]);
-      solver->add(0);
+      kissat_add(solver, -TO[i][j1][k]);
+      kissat_add(solver, -TO[i][j2][k]);
+      kissat_add(solver, 0);
     }
   }
 
   FOR(i, size) FOR(j, size) FOR(k, 6) {
-    solver->add(-TO[i][j][k]);
+    kissat_add(solver, -TO[i][j][k]);
     FOR(k2, 6) {
-      solver->add(TO[j][i][k2]);
+      kissat_add(solver, TO[j][i][k2]);
     }
-    solver->add(0);
+    kissat_add(solver, 0);
   }
 
   debug("start SAT");
-  int res = solver->solve();
+  int res = kissat_solve(solver);
   debug(res);
 
   if(res == 10) {
@@ -391,10 +394,10 @@ layout solve(QUERIES const& Q, int size, int num_queries) {
     out_layout.tag.resize(size);
     FOR(i, size) out_layout.tag[i] = tag[maxClique[i]];
     out_layout.graph.resize(size);
-    FOR(a, size) FOR(k, 6) FOR(b, size) if(solver->val(TO[a][b][k]) > 0) {
+    FOR(a, size) FOR(k, 6) FOR(b, size) if(kissat_value(solver, TO[a][b][k]) > 0) {
       out_layout.graph[a][k] = b;
     }
-    if(int i = 0; 1) FOR(j, size) if(solver->val(V[i][j]) > 0) {
+    if(int i = 0; 1) FOR(j, size) if(kissat_value(solver, V[i][j]) > 0) {
         out_layout.start = j;
       }
 
@@ -415,39 +418,39 @@ int main() {
   backward::SignalHandling sh;
 
   // test
-  // while(1) {
-  //   int size = 30;
-  //   int num_queries = 1;
-  //   layout L; L.generate(size);
-  //   layout_queries Q(L);
-  //   auto R = solve(Q, size, num_queries);
-
-  //   if(R.size != 0) {
-  //     debug(L.get_doors());
-  //     debug(R.get_doors());
-  //     if(test_equivalence(L, R)) {
-  //       debug("FOUND");
-  //       break;
-  //     }
-  //   }
-  // }
-
-  // interact
-  int size = 30;
-  int num_queries = 1;
-  auto problem_name = get_problem_name(size);
   while(1) {
-    api_queries Q;
-    api_select(problem_name);
+    int size = 30;
+    int num_queries = 1;
+    layout L; L.generate(size);
+    layout_queries Q(L);
     auto R = solve(Q, size, num_queries);
 
     if(R.size != 0) {
-      debug("candidate");
-      bool correct = api_guess(R);
-      debug(correct);
-      if(correct) break;
+      debug(L.get_doors());
+      debug(R.get_doors());
+      if(test_equivalence(L, R)) {
+        debug("FOUND");
+        break;
+      }
     }
   }
+
+  // interact
+  // int size = 30;
+  // int num_queries = 1;
+  // auto problem_name = get_problem_name(size);
+  // while(1) {
+  //   api_queries Q;
+  //   api_select(problem_name);
+  //   auto R = solve(Q, size, num_queries);
+
+  //   if(R.size != 0) {
+  //     debug("candidate");
+  //     bool correct = api_guess(R);
+  //     debug(correct);
+  //     if(correct) break;
+  //   }
+  // }
 
   return 0;
 }

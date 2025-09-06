@@ -100,8 +100,10 @@ add_library(common
   src/header.cpp
   src/api.cpp
 )
+target_link_directories(common PUBLIC
+  kissat)
 target_include_directories(common PUBLIC
-  src)
+  src kissat)
 target_link_libraries(common PUBLIC
   OpenMP::OpenMP_CXX
   Backward::Interface
@@ -110,6 +112,7 @@ target_link_libraries(common PUBLIC
   nlohmann_json::nlohmann_json
   httplib::httplib
   cadical
+  kissat
 )
 target_precompile_headers(common PRIVATE src/header.hpp)
 
