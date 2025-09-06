@@ -48,13 +48,13 @@ bool test_equivalence(layout const& a, layout const& b) {
 }
 
 struct QUERIES {
-  virtual vector<vector<int>> query(vector<vector<int>> const& q) const = 0;
+  virtual vector<vector<int>> query(vector<vector<array<int,2>>> const& q) const = 0;
 };
 
 struct layout_queries : QUERIES {
   layout const& L;
   layout_queries(layout const& L_) : L(L_) { }
-  virtual vector<vector<int>> query(vector<vector<int>> const& q) const override final {
+  virtual vector<vector<int>> query(vector<vector<array<int,2>>> const& q) const override final {
     vector<vector<int>> R;
     for(auto const& v : q) R.pb(L.evaluate_query(v));
     return R;
@@ -62,30 +62,32 @@ struct layout_queries : QUERIES {
 };
 
 struct api_queries : QUERIES {
-  virtual vector<vector<int>> query(vector<vector<int>> const& q) const override final {
+  virtual vector<vector<int>> query(vector<vector<array<int,2>>> const& q) const override final {
     vector<string> R;
     for(auto const& v : q) {
       R.eb();
-      for(int i : v) R.back() += ('0'+i);
+      for(auto [i,t] : v) {
+        R.back() += ('0'+i);
+        if(t != -1) {
+          R.back() += "[";
+          R.back() += ('0'+t);
+          R.back() += "]";
+        }
+      }
     }
     return api_explore(R);
   }
 };
 
-layout solve(QUERIES const& Q, int size, int num_queries) {
-  const int query_size = 18 * size;
+layout solve_base(QUERIES const& Q, int size, int num_dups, int num_queries) {
+  const int query_size = 6 * size;
 
-  vector<vector<int>> queries(num_queries);
+  vector<vector<array<int,2>>> queries(num_queries);
   FOR(i, num_queries) FOR(j, query_size) {
-    queries[i].pb(rng.random32(6));
+    queries[i].pb({(int)rng.random32(6), -1});
   }
 
   vector<vector<int>> answers = Q.query(queries);
-
-  // vector<vector<int>> answers_full(num_queries);
-  // FOR(i, num_queries) answers_full[i] = L.evaluate_query_full(queries[i]);
-  // vector<int> concat_full;
-  // FOR(i, num_queries) concat_full.insert(end(concat_full), all(answers_full[i]));
 
   int N = 0;
 
@@ -95,7 +97,7 @@ layout solve(QUERIES const& Q, int size, int num_queries) {
   FOR(i, num_queries) {
     FOR(j, queries[i].size()) {
       to.pb({-1,-1,-1,-1,-1,-1});
-      to.back()[queries[i][j]] = N+1+j;
+      to.back()[queries[i][j][0]] = N+1+j;
     }
     to.pb({-1,-1,-1,-1,-1,-1});
     N += queries[i].size()+1;
@@ -103,25 +105,17 @@ layout solve(QUERIES const& Q, int size, int num_queries) {
     FOR(j, answers[i].size()) tag.pb(answers[i][j]);
   }
 
-  vector<vector<int>> DIFF(N, vector<int>(N, 0));
-  FOR(i, N) FOR(j, i) if(tag[i] != tag[j]) DIFF[i][j] = DIFF[j][i] = 1;
-  while(1) {
-    bool imp = 0;
-    FOR(i, N) FOR(j, i) if(!DIFF[i][j]) FOR(k, 6) {
-        if(to[i][k] != -1 && to[j][k] != -1
-           && DIFF[to[i][k]][to[j][k]]) {
-          imp = 1;
-          DIFF[i][j] = DIFF[j][i] = 1;
-        }
-    }
-    if(!imp) break;
-  }
+  vector<u64> h(N);
+  FOR(i, N) h[i] = rng.randomInt64();
 
-  map<vector<int>, vector<int>> cache;
+  map<u64, vector<int>> cache;
   auto max_clique = [&](auto &&max_clique, vector<int> elems) -> vector<int> {
     if(elems.empty()) return {};
+    u64 key = 0;
+    for(int i : elems) key ^= h[i];
+    
     sort(all(elems));
-    if(cache.count(elems)) return cache[elems];
+    if(cache.count(key)) return cache[key];
     vector<int> part[4];
     for(int i : elems) {
       part[tag[i]].pb(i);
@@ -146,17 +140,13 @@ layout solve(QUERIES const& Q, int size, int num_queries) {
       }
       res.insert(end(res), all(cur));
     }
-    return cache[elems] = res;
+    return cache[key] = res;
   };
   vector<int> E(N); iota(all(E),0);
   auto maxClique = max_clique(max_clique, E);
 
   debug(maxClique.size());
   if((int)maxClique.size() < size) return {};
-
-  for(int a : maxClique) for(int b : maxClique) if(a != b) {
-        runtime_assert(DIFF[a][b]);
-    }
 
   kissat* solver = kissat_init();
   // kissat_set_option(solver, "quiet", 1);
@@ -175,7 +165,7 @@ layout solve(QUERIES const& Q, int size, int num_queries) {
     kissat_add(solver, V[maxClique[i]][i]);
     kissat_add(solver, 0);
   }
-  FOR(i, N) FOR(j, size) if(DIFF[i][maxClique[j]]) {
+  FOR(i, N) FOR(j, size) if(tag[i] != tag[maxClique[j]]) {
     kissat_add(solver, -V[i][j]);
     kissat_add(solver, 0);
   }
@@ -241,48 +231,51 @@ layout solve(QUERIES const& Q, int size, int num_queries) {
         out_layout.start = j;
       }
 
-    FOR(i, num_queries) {
-      auto a = out_layout.evaluate_query(queries[i]);
-      debug(answers[i]);
-      debug(a);
-      debug(answers[i] == a);
-    }
-
     return out_layout;
   }
 
   return {};
 }
 
+layout solve_dup
+(QUERIES const& Q, int size, int num_dups, int num_queries, layout const& base_layout)
+{
+  debug("HERE");
+  exit(0);
+  return {};
+}
+
 int main() {
   backward::SignalHandling sh;
 
+  int size = 6;
+  int num_dups = 2;
+  int num_queries1 = 3;
+  int num_queries2 = 3;
+
   // test
   while(1) {
-    int size = 18;
-    int num_queries = 1;
-    layout L; L.generate(size);
+    layout L; L.generate(size, num_dups);
     layout_queries Q(L);
-    auto R = solve(Q, size, num_queries);
+    auto R1 = solve_base(Q, size, num_dups, num_queries1);
+    if(R1.size == 0) continue;
+    auto R2 = solve_dup(Q, size, num_dups, num_queries2, R1);
+    if(R2.size == 0) continue;
 
-    if(R.size != 0) {
-      debug(L.get_doors());
-      debug(R.get_doors());
-      if(test_equivalence(L, R)) {
-        debug("FOUND");
-        break;
-      }
+    if(test_equivalence(L, R2)) {
+      debug("FOUND");
+      break;
     }
   }
 
   // interact
-  // int size = 30;
-  // int num_queries = 1;
-  // auto problem_name = get_problem_name(size);
+  // int size = 12;
+  // int num_queries = 3;
+  // auto problem_name = "aleph"; get_problem_name(size);
   // while(1) {
   //   api_queries Q;
   //   api_select(problem_name);
-  //   auto R = solve(Q, size, num_queries);
+  //   auto R = solve_base(Q, size, num_queries);
 
   //   if(R.size != 0) {
   //     debug("candidate");

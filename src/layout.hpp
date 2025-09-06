@@ -2,48 +2,49 @@
 
 struct layout {
   int size = 0;
+  int num_dups = 0;
   vector<int> tag;
   vector<array<int, 6>> graph;
   int start;
 
-  void generate(int size_) {
+  void generate(int size_, int num_dups_) {
     size = size_;
-    tag.resize(size);
-    FOR(i, size) tag[i] = i%4;
-    rng.shuffle(tag);
+    num_dups = num_dups_;
+    tag.resize(size*num_dups);
+    graph.resize(size*num_dups);
 
-    graph.resize(size);
+    vector<int> tag0(size);
+    FOR(i, size) tag0[i] = i%4;
+    rng.shuffle(tag0);
+    FOR(i, size*num_dups) tag[i] = tag0[i%size];
 
-    vector<array<int, 2>> doors;
-    FOR(i, size) FOR(j, 6) doors.pb({i,j});
-    rng.shuffle(doors);
-    while(!doors.empty()) {
-      auto [x,a] = doors.back(); doors.pop_back();
-      auto [y,b] = doors.back(); doors.pop_back();
-      graph[x][a] = y;
-      graph[y][b] = x;
+    vector<array<int, 2>> doors0;
+    FOR(i, size) FOR(j, 6) doors0.pb({i,j});
+    rng.shuffle(doors0);
+    while(!doors0.empty()) {
+      auto [x,a] = doors0.back(); doors0.pop_back();
+      auto [y,b] = doors0.back(); doors0.pop_back();
+      vector<int> P(num_dups); iota(all(P),0); rng.shuffle(P);
+      FOR(i, num_dups) {
+        int x1 = x + i * size;
+        int y1 = y + P[i] * size;
+        graph[x1][a] = y1;
+        graph[y1][b] = x1;
+      }
     }
-    start = rng.random32(size);
+
+    start = rng.random32(size*num_dups);
   }
 
-  vector<int> evaluate_query(vector<int> const& q) const {
+  vector<int> evaluate_query(vector<array<int,2>> const& q) const {
+    auto tag_tmp = tag;
     vector<int> out;
     int x = start;
-    out.pb(tag[x]);
-    for(int i : q) {
+    out.pb(tag_tmp[x]);
+    for(auto [i,t] : q) {
       x = graph[x][i];
-      out.pb(tag[x]);
-    }
-    return out;
-  }
-
-  vector<int> evaluate_query_full(vector<int> const& q) {
-    vector<int> out;
-    int x = start;
-    out.pb(x);
-    for(int i : q) {
-      x = graph[x][i];
-      out.pb(x);
+      out.pb(tag_tmp[x]);
+      if(t != -1) tag_tmp[x] = t;
     }
     return out;
   }
@@ -65,9 +66,6 @@ struct layout {
         }
       }
     }
-    // for(auto const& p : S) {
-    //   runtime_assert(p.second.empty());
-    // }
     return out;
   }
 };
