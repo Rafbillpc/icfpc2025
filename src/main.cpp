@@ -111,8 +111,12 @@ queries_t make_queries
   FOR(i, num_queries1) FOR(j, query_size) {
     queries1[i].pb({(int)rng.random32(6), -1});
   }
-  FOR(i, num_queries2) FOR(j, query_size) {
-    queries2[i].pb({(int)rng.random32(6), (int)rng.random32(4)});
+  FOR(i, num_queries2) {
+    int counter = rng.random32(4);
+    FOR(j, query_size) {
+      queries2[i].pb({(int)rng.random32(6), counter});
+      counter += 1;
+    }
   }
   vector<vector<array<int,2>>> queries;
   FOR(i, num_queries1) queries.pb(queries1[i]);
@@ -190,11 +194,11 @@ layout solve_base(queries_t const& Q, int size, int num_dups, int num_queries) {
   auto maxClique = max_clique(max_clique, E);
 
   debug(maxClique.size());
-
   if((int)maxClique.size() < size) return {};
 
   kissat* solver = kissat_init();
-  // kissat_set_option(solver, "quiet", 1);
+  kissat_set_option(solver, "quiet", 1);
+  kissat_set_option(solver, "time", 300);
 
   // unique_ptr<CaDiCaL::Solver> solver = make_unique<CaDiCaL::Solver>();
 
@@ -287,7 +291,7 @@ layout solve_dup
 {
   auto queries = Q.queries2;
   auto answers = Q.answers2;
-  const int query_size = 6 * size * num_dups;
+  int query_size = queries[0].size();
 
   int N = 0;
   vector<array<int, 6>> to;
@@ -446,7 +450,7 @@ int main(int argc, char** argv) {
   runtime_assert(1 <= num_queries1 && num_queries1 < 10);
   runtime_assert(0 <= num_queries2 && num_queries2 < 10);
   runtime_assert(0 <= use_api && use_api <= 1);
-  
+
   int ntest = 0;
 
   if(!use_api) {
