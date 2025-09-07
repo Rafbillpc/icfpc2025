@@ -93,15 +93,45 @@ struct api_queries : QUERIES {
   }
 };
 
-layout solve_base(QUERIES const& Q, int size, int num_dups, int num_queries) {
-  const int query_size = 6 * size * num_dups;
+struct queries_t {
+  vector<vector<array<int,2>>> queries1;
+  vector<vector<int>> answers1;
+  vector<vector<array<int,2>>> queries2;
+  vector<vector<int>> answers2;
+};
 
-  vector<vector<array<int,2>>> queries(num_queries);
-  FOR(i, num_queries) FOR(j, query_size) {
-    queries[i].pb({(int)rng.random32(6), -1});
+queries_t make_queries
+(QUERIES const& Q, int size, int num_dups, int num_queries1, int num_queries2)
+{
+  const int query_size = num_dups == 1 ? 18 * size : 6 * size * num_dups;
+  debug(query_size);
+
+  vector<vector<array<int,2>>> queries1(num_queries1);
+  vector<vector<array<int,2>>> queries2(num_queries2);
+  FOR(i, num_queries1) FOR(j, query_size) {
+    queries1[i].pb({(int)rng.random32(6), -1});
   }
+  FOR(i, num_queries2) FOR(j, query_size) {
+    queries2[i].pb({(int)rng.random32(6), (int)rng.random32(4)});
+  }
+  vector<vector<array<int,2>>> queries;
+  FOR(i, num_queries1) queries.pb(queries1[i]);
+  FOR(i, num_queries2) queries.pb(queries2[i]);
 
-  vector<vector<int>> answers = Q.query(queries);
+  auto answers = Q.query(queries);
+  vector<vector<int>> answers1(num_queries1);
+  vector<vector<int>> answers2(num_queries2);
+  FOR(i, num_queries1) answers1[i] = answers[i];
+  FOR(i, num_queries2) answers2[i] = answers[num_queries1+i];
+
+  return queries_t {
+    queries1, answers1, queries2, answers2
+  };
+}
+
+layout solve_base(queries_t const& Q, int size, int num_dups, int num_queries) {
+  auto queries = Q.queries1;
+  auto answers = Q.answers1;
 
   int N = 0;
 
@@ -159,10 +189,12 @@ layout solve_base(QUERIES const& Q, int size, int num_dups, int num_queries) {
   vector<int> E(N); iota(all(E),0);
   auto maxClique = max_clique(max_clique, E);
 
+  debug(maxClique.size());
+
   if((int)maxClique.size() < size) return {};
 
   kissat* solver = kissat_init();
-  kissat_set_option(solver, "quiet", 1);
+  // kissat_set_option(solver, "quiet", 1);
 
   // unique_ptr<CaDiCaL::Solver> solver = make_unique<CaDiCaL::Solver>();
 
@@ -251,16 +283,12 @@ layout solve_base(QUERIES const& Q, int size, int num_dups, int num_queries) {
 }
 
 layout solve_dup
-(QUERIES const& Q, int size, int num_dups, int num_queries, layout const& base_layout)
+(queries_t const& Q, int size, int num_dups, int num_queries, layout const& base_layout)
 {
+  auto queries = Q.queries2;
+  auto answers = Q.answers2;
   const int query_size = 6 * size * num_dups;
 
-  vector<vector<array<int,2>>> queries(num_queries);
-  FOR(i, num_queries) FOR(j, query_size) {
-    queries[i].pb({(int)rng.random32(6), (int)rng.random32(4)});
-  }
-
-  vector<vector<int>> answers = Q.query(queries);
   int N = 0;
   vector<array<int, 6>> to;
   vector<int> at;
@@ -392,27 +420,33 @@ layout solve_dup
   return {};
 }
 
-int main() {
+int main(int argc, char** argv) {
   backward::SignalHandling sh;
 
-  // (6, 2)  : (1,1)
-  // (12, 2) : (2,1)
-  // (18, 2) : (2,1)
-  // (24, 2) : (2,1)
-  // (30, 2) : (3,1)
+  // (6, 2)  : (1,1) 3
+  // (12, 2) : (1,1) 3
+  // (18, 2) : (2,1) 4
+  // (24, 2) : (2,1) 4
+  // (30, 2) : (3,1) 5
 
-  // (6, 3)  : (1,1)
-  // (12, 3) : (2,1)
-  // (18, 3) : (2,2)
-  // (24, 3) : (2,2)
-  // (30, 3) : (3,2)
+  // (6, 3)  : (1,1) 3
+  // (12, 3) : (1,1) 3
+  // (18, 3) : (1,1) 3
+  // (24, 3) : (1,2) 4
+  // (30, 3) : (2,2) 5
 
-  int size = 12;
-  int num_dups = 2;
-  int num_queries1 = 2;
-  int num_queries2 = 1;
-  bool use_api = true;
-
+  runtime_assert(argc >= 6);
+  int size = atoi(argv[1]);
+  int num_dups = atoi(argv[2]);
+  int num_queries1 = atoi(argv[3]);
+  int num_queries2 = atoi(argv[4]);
+  int use_api = atoi(argv[5]);
+  runtime_assert(3 <= size && size <= 90);
+  runtime_assert(1 <= num_dups && num_dups <= 3);
+  runtime_assert(1 <= num_queries1 && num_queries1 < 10);
+  runtime_assert(0 <= num_queries2 && num_queries2 < 10);
+  runtime_assert(0 <= use_api && use_api <= 1);
+  
   int ntest = 0;
 
   if(!use_api) {
@@ -422,10 +456,11 @@ int main() {
       debug(ntest);
       layout L; L.generate(size, num_dups);
       layout_queries Q(L);
-      auto R1 = solve_base(Q, size, num_dups, num_queries1);
+      auto QS = make_queries(Q,size,num_dups,num_queries1,num_queries2);
+      auto R1 = solve_base(QS, size, num_dups, num_queries1);
       if(R1.size == 0) continue;
       debug("reach1");
-      auto R2 = solve_dup(Q, size, num_dups, num_queries2, R1);
+      auto R2 = solve_dup(QS, size, num_dups, num_queries2, R1);
       if(R2.size == 0) continue;
       debug("reach2");
 
@@ -444,11 +479,12 @@ int main() {
       debug(ntest);
       api_select(problem_name);
       api_queries Q;
-      auto R1 = solve_base(Q, size, num_dups, num_queries1);
+      auto QS = make_queries(Q,size,num_dups,num_queries1,num_queries2);
+      auto R1 = solve_base(QS, size, num_dups, num_queries1);
       if(R1.size == 0) continue;
       debug("reach1");
 
-      auto R2 = solve_dup(Q, size, num_dups, num_queries2, R1);
+      auto R2 = solve_dup(QS, size, num_dups, num_queries2, R1);
       if(R2.size == 0) continue;
       debug("reach2");
 

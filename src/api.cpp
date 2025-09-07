@@ -108,7 +108,7 @@ bool api_guess(layout const& L) {
   FOR(i, L.size*L.num_dups) j["map"]["rooms"].emplace_back(L.tag[i]);
   j["map"]["startingRoom"] = L.start;
   auto doors = L.get_doors();
-  debug(doors);
+  // debug(doors);
   for(auto [a,b,c,d] : doors) {
     json v;
     v["from"]["room"] = a;
