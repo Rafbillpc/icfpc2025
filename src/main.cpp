@@ -1,35 +1,7 @@
 #include "header.hpp"
 #include "api.hpp"
 #include "layout.hpp"
-#include "backward.hpp"
 #include "kissat.h"
-
-struct union_find {
-  vector<int> A;
-  vector<int> SZ;
-
-  union_find(int n) : A(n), SZ(n, 1) {
-    iota(all(A), 0);
-  }
-
-  void add_node() {
-    A.pb(A.size());
-    SZ.pb(1);
-  }
-
-  int find(int a) {
-    return A[a] == a ? a : A[a] = find(A[a]);
-  }
-
-  bool unite(int a, int b) {
-    a = find(a); b = find(b);
-    if(SZ[a] > SZ[b]) swap(a,b);
-    if(a == b) return false;
-    A[a] = b;
-    SZ[b] += SZ[a];
-    return true;
-  }
-};
 
 bool test_equivalence(layout const& a, layout const& b) {
   runtime_assert(a.size == b.size && a.num_dups == b.num_dups);
@@ -94,48 +66,31 @@ struct api_queries : QUERIES {
 };
 
 struct queries_t {
-  vector<vector<array<int,2>>> queries1;
-  vector<vector<int>> answers1;
-  vector<vector<array<int,2>>> queries2;
-  vector<vector<int>> answers2;
+  vector<vector<array<int,2>>> queries;
+  vector<vector<int>> answers;
 };
 
 queries_t make_queries
-(QUERIES const& Q, int size, int num_dups, int num_queries1, int num_queries2)
+(QUERIES const& Q, int size, int num_dups, int num_queries, f32 ratio_query1)
 {
   const int query_size = num_dups == 1 ? 18 * size : 6 * size * num_dups;
-  debug(query_size);
 
-  vector<vector<array<int,2>>> queries1(num_queries1);
-  vector<vector<array<int,2>>> queries2(num_queries2);
-  FOR(i, num_queries1) FOR(j, query_size) {
-    queries1[i].pb({(int)rng.random32(6), -1});
-  }
-  FOR(i, num_queries2) {
-    int counter = rng.random32(4);
-    FOR(j, query_size) {
-      queries2[i].pb({(int)rng.random32(6), counter});
-      counter += 1;
+  vector<vector<array<int,2>>> queries(num_queries);
+  FOR(i, num_queries) FOR(j, query_size) {
+    queries[i].pb({(int)rng.random32(6), -1});
+    if(1.0*(i*query_size+j)/query_size/num_queries > ratio_query1) {
+      queries[i].back()[1] = rng.random32(4);
     }
   }
-  vector<vector<array<int,2>>> queries;
-  FOR(i, num_queries1) queries.pb(queries1[i]);
-  FOR(i, num_queries2) queries.pb(queries2[i]);
-
   auto answers = Q.query(queries);
-  vector<vector<int>> answers1(num_queries1);
-  vector<vector<int>> answers2(num_queries2);
-  FOR(i, num_queries1) answers1[i] = answers[i];
-  FOR(i, num_queries2) answers2[i] = answers[num_queries1+i];
-
   return queries_t {
-    queries1, answers1, queries2, answers2
+    queries, answers
   };
 }
 
 layout solve_base(queries_t const& Q, int size, int num_dups, int num_queries) {
-  auto queries = Q.queries1;
-  auto answers = Q.answers1;
+  auto queries = Q.queries;
+  auto answers = Q.answers;
 
   int N = 0;
 
@@ -143,14 +98,16 @@ layout solve_base(queries_t const& Q, int size, int num_dups, int num_queries) {
   vector<array<int, 6>> to;
 
   FOR(i, num_queries) {
-    FOR(j, queries[i].size()) {
-      to.pb({-1,-1,-1,-1,-1,-1});
-      to.back()[queries[i][j][0]] = N+1+j;
-    }
+    N += 1;
     to.pb({-1,-1,-1,-1,-1,-1});
-    N += queries[i].size()+1;
-
-    FOR(j, answers[i].size()) tag.pb(answers[i][j]);
+    tag.pb(answers[i][0]);
+    FOR(j, queries[i].size()) {
+      if(queries[i][j][1] != -1) break;
+      to.back()[queries[i][j][0]] = N;
+      N += 1;
+      to.pb({-1,-1,-1,-1,-1,-1});
+      tag.pb(answers[i][j+1]);
+    }
   }
 
   vector<u64> h(N);
@@ -159,11 +116,12 @@ layout solve_base(queries_t const& Q, int size, int num_dups, int num_queries) {
   map<u64, vector<int>> cache;
   auto max_clique = [&](auto &&max_clique, vector<int> elems) -> vector<int> {
     if(elems.empty()) return {};
+    if(elems.size() == 1) return elems;
     u64 key = 0;
     for(int i : elems) key ^= h[i];
     
-    sort(all(elems));
     if(cache.count(key)) return cache[key];
+
     vector<int> part[4];
     for(int i : elems) {
       part[tag[i]].pb(i);
@@ -193,14 +151,11 @@ layout solve_base(queries_t const& Q, int size, int num_dups, int num_queries) {
   vector<int> E(N); iota(all(E),0);
   auto maxClique = max_clique(max_clique, E);
 
-  debug(maxClique.size());
   if((int)maxClique.size() < size) return {};
 
   kissat* solver = kissat_init();
   kissat_set_option(solver, "quiet", 1);
-  kissat_set_option(solver, "time", 300);
-
-  // unique_ptr<CaDiCaL::Solver> solver = make_unique<CaDiCaL::Solver>();
+  kissat_set_option(solver, "time", 120);
 
   int nv = 0;
   vector<vector<int>> V(N, vector<int>(size));
@@ -209,14 +164,7 @@ layout solve_base(queries_t const& Q, int size, int num_dups, int num_queries) {
   FOR(i, size) TO[i].resize(size);
   FOR(i, size) FOR(j, size) FOR(k, 6) TO[i][j][k] = ++nv;
 
-  FOR(i, size) {
-    kissat_add(solver, V[maxClique[i]][i]);
-    kissat_add(solver, 0);
-  }
-  FOR(i, N) FOR(j, size) if(tag[i] != tag[maxClique[j]]) {
-    kissat_add(solver, -V[i][j]);
-    kissat_add(solver, 0);
-  }
+  // V[-][-] is the graph of a function.
   FOR(i, N) {
     FOR(j, size) kissat_add(solver, V[i][j]);
     kissat_add(solver, 0);
@@ -226,6 +174,17 @@ layout solve_base(queries_t const& Q, int size, int num_dups, int num_queries) {
     kissat_add(solver, - V[i][j2]);
     kissat_add(solver, 0);
   }
+  // breaking the symmetry using the maximum clique
+  FOR(i, size) {
+    kissat_add(solver, V[maxClique[i]][i]);
+    kissat_add(solver, 0);
+  }
+  // if V[i][j] then i mush have the correct label
+  FOR(i, N) FOR(j, size) if(tag[i] != tag[maxClique[j]]) {
+    kissat_add(solver, -V[i][j]);
+    kissat_add(solver, 0);
+  }
+  // 
   FOR(i, N) FOR(k, 6) if(to[i][k] != -1) {
     FOR(a, size) FOR(b, size) {
       kissat_add(solver, - TO[a][b][k]);
@@ -234,6 +193,7 @@ layout solve_base(queries_t const& Q, int size, int num_dups, int num_queries) {
       kissat_add(solver, 0);
     }
   }
+  // TO[-][-][-] is the graph of a function (sending (i,k) to j)
   FOR(i, size) FOR(k, 6) {
     FOR(j, size) kissat_add(solver, TO[i][j][k]);
     kissat_add(solver, 0);
@@ -245,7 +205,9 @@ layout solve_base(queries_t const& Q, int size, int num_dups, int num_queries) {
       kissat_add(solver, 0);
     }
   }
-
+  // if there exists an edge (i -> j), then there exists an edge (j -> i).
+  // (additional constraints would be needed to ensure
+  //  that this correspondence is bijective).
   FOR(i, size) FOR(j, size) FOR(k, 6) {
     kissat_add(solver, -TO[i][j][k]);
     FOR(k2, 6) {
@@ -256,15 +218,7 @@ layout solve_base(queries_t const& Q, int size, int num_dups, int num_queries) {
 
   int res = kissat_solve(solver);
 
-  if(res == 10) {
-    // FOR(i, M) FOR(j, size) if(solver->val(V[i][j]) > 0) {
-    //   debug(i,j);
-    // }
-
-    // FOR(a, size) FOR(k, 6) FOR(b, size) if(solver->val(TO[a][b][k]) > 0) {
-    //   debug(a,k,b);
-    // }
-
+  if(res == 10) { // SAT
     layout out_layout;
     out_layout.size = size;
     out_layout.num_dups = 1;
@@ -289,8 +243,8 @@ layout solve_base(queries_t const& Q, int size, int num_dups, int num_queries) {
 layout solve_dup
 (queries_t const& Q, int size, int num_dups, int num_queries, layout const& base_layout)
 {
-  auto queries = Q.queries2;
-  auto answers = Q.answers2;
+  auto queries = Q.queries;
+  auto answers = Q.answers;
   int query_size = queries[0].size();
 
   int N = 0;
@@ -372,11 +326,13 @@ layout solve_dup
     vector<vector<array<int,3>>> X(size);
     FOR(j, query_size) {
       int ans = answers[i][j+1];
-      int wrote = queries[i][j][1];
+      int wrote = queries[i][j][1] == -1 ? ans : queries[i][j][1];
       int when = rev[i][j+1];
       int elem = at[when];
       int k = X[elem].size()-1;
       while(k >= 0 && X[elem][k][2] != ans) {
+        // we learn that "X[elem][k][0]" and "when" are different
+        // copies of the same node from the base graph
         FOR(a, num_dups) {
           kissat_add(solver, - V[X[elem][k][0]][a]);
           kissat_add(solver, - V[when][a]);
@@ -427,45 +383,37 @@ layout solve_dup
 int main(int argc, char** argv) {
   backward::SignalHandling sh;
 
-  // (6, 2)  : (1,1) 3
-  // (12, 2) : (1,1) 3
-  // (18, 2) : (2,1) 4
-  // (24, 2) : (2,1) 4
-  // (30, 2) : (3,1) 5
-
-  // (6, 3)  : (1,1) 3
-  // (12, 3) : (1,1) 3
-  // (18, 3) : (1,1) 3
-  // (24, 3) : (1,2) 4
-  // (30, 3) : (2,2) 5
-
   runtime_assert(argc >= 6);
   int size = atoi(argv[1]);
   int num_dups = atoi(argv[2]);
-  int num_queries1 = atoi(argv[3]);
-  int num_queries2 = atoi(argv[4]);
+  int num_queries = atoi(argv[3]);
+  f32 ratio = atof(argv[4]);
   int use_api = atoi(argv[5]);
   runtime_assert(3 <= size && size <= 90);
   runtime_assert(1 <= num_dups && num_dups <= 3);
-  runtime_assert(1 <= num_queries1 && num_queries1 < 10);
-  runtime_assert(0 <= num_queries2 && num_queries2 < 10);
+  runtime_assert(1 <= num_queries && num_queries < 10);
+  runtime_assert(0.0 <= ratio && ratio <= 1.0);
   runtime_assert(0 <= use_api && use_api <= 1);
 
-  int ntest = 0;
+  int ntest = 0, nreach1 = 0, nreach2 = 0;
 
   if(!use_api) {
 
     while(1) {
       ntest += 1;
-      debug(ntest);
+      debug(ntest, nreach1, nreach2);
       layout L; L.generate(size, num_dups);
       layout_queries Q(L);
-      auto QS = make_queries(Q,size,num_dups,num_queries1,num_queries2);
-      auto R1 = solve_base(QS, size, num_dups, num_queries1);
+      auto QS = make_queries(Q,size,num_dups,num_queries,ratio);
+
+      auto R1 = solve_base(QS, size, num_dups, num_queries);
       if(R1.size == 0) continue;
+      nreach1 += 1;
       debug("reach1");
-      auto R2 = solve_dup(QS, size, num_dups, num_queries2, R1);
+
+      auto R2 = solve_dup(QS, size, num_dups, num_queries, R1);
       if(R2.size == 0) continue;
+      nreach2 += 1;
       debug("reach2");
 
       if(test_equivalence(L, R2)) {
@@ -480,16 +428,19 @@ int main(int argc, char** argv) {
     debug(problem_name);
     while(1) {
       ntest += 1;
-      debug(ntest);
+      debug(ntest, nreach1, nreach2);
       api_select(problem_name);
       api_queries Q;
-      auto QS = make_queries(Q,size,num_dups,num_queries1,num_queries2);
-      auto R1 = solve_base(QS, size, num_dups, num_queries1);
+      auto QS = make_queries(Q,size,num_dups,num_queries,ratio);
+
+      auto R1 = solve_base(QS, size, num_dups, num_queries);
       if(R1.size == 0) continue;
+      nreach1 += 1;
       debug("reach1");
 
-      auto R2 = solve_dup(QS, size, num_dups, num_queries2, R1);
+      auto R2 = solve_dup(QS, size, num_dups, num_queries, R1);
       if(R2.size == 0) continue;
+      nreach2 += 1;
       debug("reach2");
 
       bool correct = api_guess(R2);
